@@ -120,9 +120,9 @@ jobs:
           workspaces: src-tauri
           key: ${{ matrix.target }}
 
+      # Version comes from `packageManager` in package.json; passing
+      # `with: version` as well makes the action refuse to start.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:

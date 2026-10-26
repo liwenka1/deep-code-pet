@@ -35,9 +35,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Version comes from `packageManager` in package.json; passing
+      # `with: version` as well makes the action refuse to start.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -82,9 +82,9 @@ jobs:
         run: cargo test
         working-directory: src-tauri
 
+      # Version comes from `packageManager` in package.json; passing
+      # `with: version` as well makes the action refuse to start.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
