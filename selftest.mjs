@@ -152,6 +152,25 @@ console.log("\n── 事件翻译（brain）───────────�
   const tail2 = finishTurn(chatOnly, { exitCode: 0 });
   ok(tail2.some((e) => e.kind === "state" && e.state === "jumping"), "纯对话 → jumping 收尾");
 
+  // 正文不截断：长度限制只属于各自的 UI（宠物提示卡片 120 字，聊天面板全文）。
+  // 以前 reducer 里按 400 字砍，导致聊天面板里的长回复也被截成半句。
+  const longText = "喵".repeat(600);
+  const streamed = createSession();
+  const streamEffects = applyEnvelope(
+    streamed,
+    { item: { kind: "assistant.delta", payload: { text: longText } } },
+    1000, // 越过节流窗口，否则压根不会发气泡
+  );
+  ok(
+    streamEffects.some((e) => e.kind === "say" && e.text.length === 600),
+    "流式增量整段带回（不再被截到 400 字）",
+  );
+  const tailLong = finishTurn(streamed, { exitCode: 0 });
+  ok(
+    tailLong.some((e) => e.kind === "say" && e.messageKind === "assistant" && e.text.length === 600),
+    "收尾的完整回复也不截断",
+  );
+
   const failed = createSession();
   const failEffects = applyEnvelope(failed, { item: { kind: "error", payload: { message: "API 挂了" } } }, 0);
   const tail3 = finishTurn(failed, { exitCode: 1 });

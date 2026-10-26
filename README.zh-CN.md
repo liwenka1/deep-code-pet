@@ -108,6 +108,15 @@
 `spriteVersionNumber` 决定 9 行还是 11 行（缺失按 v1），其它字段一律忽略。
 三种安装方式：拖进窗口、放进 `~/.deep-code-pet/pets/<名字>/`、或用 `DEEP_CODE_PET_ASSET` 指定。
 
+## 人格
+
+宠物的人格就是 `<配置目录>/agent/AGENTS.md`，纯 Markdown，随时可以改
+（macOS 在 `~/Library/Application Support/dev.deepcode.pet/agent/AGENTS.md`，Windows 在
+`%APPDATA%\dev.deepcode.pet\agent\AGENTS.md`，Linux 在
+`~/.config/dev.deepcode.pet/agent/AGENTS.md`）。
+
+第一行是归属标记：它在，默认口径升级时会跟着刷新；把它删掉，这份文件就归你了，app 再也不会动它。
+
 ## 环境要求
 
 - macOS 10.15+ / Windows 10 及以上 / Linux（需要 WebKitGTK 4.1）；发布出来的安装包在

@@ -6,7 +6,6 @@
 // UI 层照着执行（换状态 / 显示气泡）。不碰进程、不碰 DOM。
 
 export const BUBBLE_THROTTLE_MS = 350;
-export const BUBBLE_MAX_CHARS = 400;
 
 export function createSession() {
   return {
@@ -20,9 +19,8 @@ export function createSession() {
   };
 }
 
-const clamp = (text) =>
-  text.length > BUBBLE_MAX_CHARS ? `${text.slice(0, BUBBLE_MAX_CHARS)}…` : text;
-
+// 正文不在这里截断：宠物窗口不显示文字，聊天面板要显示全文。要限长请在各自的
+// UI 里限（pet 的提示卡片见 main.js 的 notify）。
 /**
  * @returns {Array<{kind:"state",state:string}|{kind:"say",text:string,busy:boolean,messageKind:string,status?:string}>}
  */
@@ -49,7 +47,7 @@ export function applyEnvelope(session, envelope, now = Date.now()) {
         session.lastBubbleAt = now;
         effects.push({
           kind: "say",
-          text: clamp(session.assistant),
+          text: session.assistant,
           busy: true,
           messageKind: "assistant",
           status: "running",
@@ -183,7 +181,7 @@ export function finishTurn(session, { exitCode = 0 } = {}) {
     if (text) {
       effects.push({
         kind: "say",
-        text: clamp(text),
+        text,
         busy: false,
         messageKind: "assistant",
         status: "idle",
@@ -196,7 +194,7 @@ export function finishTurn(session, { exitCode = 0 } = {}) {
   if (text) {
     effects.push({
       kind: "say",
-      text: clamp(text),
+      text,
       busy: false,
       messageKind: "assistant",
       status: "idle",

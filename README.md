@@ -113,6 +113,16 @@ format; `idle` deliberately uses uneven timing for its blink.
 Three ways to install a pet: drag the folder onto the window, drop it into
 `~/.deep-code-pet/pets/<name>/`, or point `DEEP_CODE_PET_ASSET` at it.
 
+## Persona
+
+The pet's instructions are plain Markdown at `<config dir>/agent/AGENTS.md`
+(`~/Library/Application Support/dev.deepcode.pet/agent/AGENTS.md` on macOS,
+`%APPDATA%\dev.deepcode.pet\agent\AGENTS.md` on Windows,
+`~/.config/dev.deepcode.pet/agent/AGENTS.md` on Linux) — edit it freely.
+
+The first line is a marker: while it is there the app refreshes the file when the shipped default
+persona changes; delete that line and the file is yours, the app will not touch it again.
+
 ## Requirements
 
 - macOS 10.15+, Windows 10/11, or Linux with WebKitGTK 4.1 (the published installers are built on
