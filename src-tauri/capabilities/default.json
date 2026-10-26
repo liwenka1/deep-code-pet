@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "宠物窗口与聊天窗口需要的核心权限",
-  "windows": ["main", "chat"],
+  "description": "宠物窗口、聊天窗口与历史窗口需要的核心权限",
+  "windows": ["main", "chat", "history"],
   "permissions": ["core:default", "core:window:allow-start-dragging"]
 }
