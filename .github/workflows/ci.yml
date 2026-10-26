@@ -74,6 +74,11 @@ jobs:
         run: cargo fmt --all -- --check
         working-directory: src-tauri
 
+      # Toolchain is intentionally not pinned: clippy runs on the current
+      # stable so newly introduced lints surface here first. A local toolchain
+      # older than CI will not reproduce every lint, so a green local run is
+      # necessary but not sufficient - treat the CI report as the source of
+      # truth and fix the lint rather than relaxing the gate.
       - name: clippy (warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
