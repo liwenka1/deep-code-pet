@@ -2,12 +2,13 @@
 #
 # Triggers: push to main, any pull request, manual dispatch.
 # Two jobs must both pass:
-#   frontend - JS syntax, offline self-tests, Vite build
+#   frontend - JS syntax, offline self-tests, Vite build  (Linux, one runner is enough)
 #   rust     - rustfmt, clippy (-D warnings), cargo test, `tauri build --no-bundle`
+#              on macOS, Linux and Windows: the three platforms we ship
 #
-# The rust job runs on macOS because the Tauri macOS backend links system
-# frameworks. `--no-bundle` compiles without packaging, which catches broken
-# config and compile errors in minutes; full dmg builds live in release.yml.
+# The rust matrix is what keeps the app honestly cross-platform. `--no-bundle`
+# compiles without packaging, which catches broken config and compile errors in
+# minutes; full installer builds live in release.yml.
 
 name: CI
 
@@ -57,10 +58,32 @@ jobs:
         run: pnpm build
 
   rust:
-    name: rust (checks)
-    runs-on: macos-14
+    name: rust (checks, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+
+      # The Tauri Linux backend links WebKitGTK / GTK / appindicator. macOS and
+      # Windows ship their equivalents on the image, so this step is Linux-only.
+      # Bundler-only dependencies (libfuse2 for AppImage, patchelf) belong in
+      # release.yml: this job stops at `--no-bundle`.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libxdo-dev \
+            build-essential \
+            file
 
       - uses: dtolnay/rust-toolchain@stable
         with:

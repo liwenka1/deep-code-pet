@@ -10,12 +10,12 @@
 #      src-tauri/Cargo.toml, src-tauri/Cargo.lock) - they must agree or the
 #      artifact advertises the wrong version;
 #   3. commits, tags, pushes;
-#   4. builds both macOS architectures and uploads one dmg each to the same
-#      GitHub Release.
+#   4. builds macOS (both architectures), Windows and Linux, and uploads every
+#      installer to the same GitHub Release.
 #
 # Two things to know:
-#   - The dmg is UNSIGNED unless Apple signing secrets are wired in. Gatekeeper
-#     will block it; users run `xattr -cr /Applications/deep-code-pet.app`.
+#   - Nothing is signed. macOS blocks the dmg until `xattr -cr`, Windows shows a
+#     SmartScreen warning, Linux installers are unsigned by nature.
 #   - Commits pushed with GITHUB_TOKEN do not re-trigger CI (GitHub prevents
 #     recursive runs), so main must be green before releasing.
 
@@ -105,19 +105,55 @@ jobs:
   build:
     name: build (${{ matrix.name }})
     needs: prepare
-    runs-on: macos-14
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: darwin-arm64
+            runner: macos-14
             target: aarch64-apple-darwin
+            bundles: app,dmg
+            artifacts: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           - name: darwin-x64
+            runner: macos-14
             target: x86_64-apple-darwin
+            bundles: app,dmg
+            artifacts: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+          - name: windows-x64
+            runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+            artifacts: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+          - name: linux-x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: deb,appimage
+            artifacts: |
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
     steps:
       - uses: actions/checkout@v4
         with:
           ref: v${{ inputs.version }}
+
+      # The Tauri Linux backend links WebKitGTK / GTK / appindicator; the
+      # AppImage bundler also wants FUSE (libfuse2) and patchelf.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libayatana-appindicator3-dev \
+            libssl-dev \
+            libxdo-dev \
+            libfuse2 \
+            patchelf \
+            build-essential \
+            file
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -140,15 +176,36 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build app and dmg
-        run: pnpm exec tauri build --target ${{ matrix.target }}
+      # `bundle.targets` in tauri.conf.json is "all", so a plain local
+      # `pnpm tauri build` also tries the targets this machine cannot produce
+      # (rpm on Linux, msi on Windows). The matrix pins exactly one set per
+      # platform, which is why every build passes --bundles explicitly.
+      - name: Build app and installers
+        run: pnpm exec tauri build --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
 
-      - name: Upload to release
-        uses: softprops/action-gh-release@v2
+      # Artifacts go to the publish job instead of straight to the release:
+      # four jobs creating/updating the same release in parallel is a race.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: ${{ matrix.artifacts }}
+          if-no-files-found: error
+
+  publish:
+    name: publish (upload to the release)
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ inputs.version }}
           name: v${{ inputs.version }}
           prerelease: ${{ inputs.prerelease }}
+          # Notes are generated once, here, rather than by every build job.
           generate_release_notes: true
-          files: |
-            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          files: artifacts/**/*

@@ -2,7 +2,7 @@
   <img src="src-tauri/icons/128x128@2x.png" alt="deep-code-pet 图标" width="96" height="96">
   <h1>deep-code-pet</h1>
   <p>
-    <strong>住在你 Mac 桌面上的宠物</strong>
+    <strong>住在你桌面上的宠物（macOS / Windows / Linux）</strong>
     <br>
     素材来自本地精灵图集，大脑是你终端里已经在跑的那个 Agent。
   </p>
@@ -14,6 +14,8 @@
       <img src="https://img.shields.io/github/license/liwenka1/deep-code-pet?style=flat-square" alt="License">
     </a>
     <img src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" alt="macOS">
+    <img src="https://img.shields.io/badge/-Windows-black?style=flat-square&logo=windows&logoColor=white" alt="Windows">
+    <img src="https://img.shields.io/badge/-Linux-black?style=flat-square&logo=linux&logoColor=white" alt="Linux">
   </p>
   <p>
     <a href="https://github.com/liwenka1/deep-code-pet/releases">下载</a> •
@@ -42,7 +44,7 @@
 | **历史对话** | 独立列表窗口：切换、新建、查看；每个会话就是磁盘上的一个文件 |
 | **真实 Agent** | 工具调用、出错、回合结束都会驱动动画；文字进聊天面板 |
 | **多屏拖拽** | 窗口位置由系统光标坐标算，跨显示器、混合缩放都正常 |
-| **可压到菜单栏之上** | 宠物窗口抬到 `NSStatusWindowLevel`，能贴到屏幕最顶部 |
+| **可压到菜单栏之上** | macOS 上把宠物窗口抬到 `NSStatusWindowLevel`，能贴到屏幕最顶部；其它平台用系统自带的 `alwaysOnTop` |
 | **体积小** | 透明无边框窗口贴着精灵，除了宠物本体没有可点区域 |
 
 ## 工作机制
@@ -108,7 +110,8 @@
 
 ## 环境要求
 
-- macOS（目前只验证了这个平台）
+- macOS 10.15+ / Windows 10 及以上 / Linux（需要 WebKitGTK 4.1）；发布出来的安装包在
+  GitHub 的 macOS 14、Windows、Ubuntu 22.04 runner 上构建
 - Node.js 20+ 与 pnpm
 - 编译需要 [Rust 工具链](https://rustup.rs)
 - 已安装并配置好的 `deepcode`（`deepcode --version` 有输出，`deepcode doctor` 能看到 key）
@@ -116,28 +119,43 @@
 宠物会 spawn `deepcode -p <prompt> --output-format stream-json` 并继承你的环境，
 所以计费走同一账号，宠物自身不存 key。
 
-从 Finder 启动的 app **不会继承 shell 的 PATH**，所以可执行文件按这个顺序解析：
+GUI 启动的 app **不会继承 shell 的 PATH**，所以可执行文件按这个顺序解析：
 
 1. 环境变量 `DEEP_CODE_PET_BIN`
-2. `~/Library/Application Support/dev.deepcode.pet/settings.json` 里的 `deepcode` 字段
+2. app 的 `settings.json` 里的 `deepcode` 字段（macOS 在
+   `~/Library/Application Support/dev.deepcode.pet/`，Windows 在 `%APPDATA%\dev.deepcode.pet\`，
+   Linux 在 `~/.config/dev.deepcode.pet/`）
 3. `PATH`
-4. 登录 shell（`$SHELL -lic 'command -v deepcode'`）—— fnm / nvm / Homebrew 装的都能问到
-5. 常见安装位置（fnm 的 node-versions、nvm、`.local/bin`、`.bun`、`.volta`、Homebrew）
+4. 登录 shell（`$SHELL -lic 'command -v deepcode'`）—— fnm / nvm / Homebrew 装的都能问到；
+   Windows 上的等价物是 `where deepcode`
+5. 常见安装位置（fnm 的 node-versions、nvm、`.local/bin`、`.bun`、`.volta`、Homebrew、
+   `%APPDATA%\npm`、`%LOCALAPPDATA%\pnpm`、Scoop）
 
-找到之后会优先用同目录的 `deepcode-bin`：npm 包里的 `deepcode` 是
-`#!/usr/bin/env node` 启动脚本，而 GUI 进程同样没有 `node`。
+找到之后会优先用 node 脚本背后的原生二进制：npm 包里的 `deepcode` 是
+`#!/usr/bin/env node` 启动脚本，而 GUI 进程同样没有 `node`。macOS / Linux 上这个二进制是同目录的
+`deepcode-bin`；Windows 上 npm 装出来的是 `CreateProcess` 根本执行不了的 `deepcode.cmd`，
+所以要读这个 `.cmd` 找到真实入口、优先用包内的 `bin\deepcode.exe`，找不到才用 `node.exe` 跑脚本 ——
+不走 `cmd.exe`，否则你提问里的 `&`、`%` 会被它解释掉。
 
 ## 下载
 
-从 [Releases](https://github.com/liwenka1/deep-code-pet/releases) 下载最新 `.dmg`。
+从 [Releases](https://github.com/liwenka1/deep-code-pet/releases) 下载对应平台的安装包：
 
-当前构建未签名，macOS 首次启动会拦：
+| 平台 | 产物 |
+| :-- | :-- |
+| macOS（Apple Silicon / Intel） | `.dmg` |
+| Windows x64 | `-setup.exe`（NSIS） |
+| Linux x64 | `.AppImage` / `.deb` |
+
+当前构建都未签名。macOS 首次启动会拦：
 
 ```bash
 xattr -cr /Applications/deep-code-pet.app
 ```
 
-跑一次即可，之后再打开就正常。
+跑一次即可，之后再打开就正常。Windows 上 SmartScreen 会提示「Windows 已保护你的电脑」，
+点「更多信息 → 仍要运行」。Linux 的产物本来就是未签名的：`.AppImage` 记得 `chmod +x`，
+`.deb` 用包管理器装。
 
 ## 本地开发
 
@@ -157,11 +175,13 @@ cd src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets -- -D w
 ## CI 与发版
 
 push 到 `main` 和每个 PR 都会跑 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 里的两个 job：
-`frontend (checks)`（语法、自测、Vite 构建）与 `rust (checks)`（rustfmt、clippy `-D warnings`、
-cargo test、`tauri build --no-bundle`）。
+`frontend (checks)`（语法、自测、Vite 构建，跑在 Linux 上）与 `rust (checks)`（rustfmt、clippy
+`-D warnings`、cargo test、`tauri build --no-bundle`，跑在 macOS 14 / Ubuntu / Windows 三平台上）。
+三平台矩阵是「跨平台」这件事的唯一真话来源。
 
 发版是手动触发：**Actions → Release → Run workflow**，填不带 `v` 的版本号。它会校验 semver、
-要求从 `main` 触发、把版本号写进四个文件、提交打 tag、构建两个 macOS 架构并各上传一个 dmg。
+要求从 `main` 触发、把版本号写进四个文件、提交打 tag，然后构建 macOS 两个架构、Windows（NSIS
+安装包）与 Linux（deb + AppImage），把所有安装包上传到同一个 GitHub Release。
 
 ## 已知限制
 
@@ -171,7 +191,8 @@ cargo test、`tauri build --no-bundle`）。
    换成常驻 `deepcode serve` + SSE 的话，reducer 不用改。
 4. **审批无法回答**：无头模式一律自动拒绝，`approval.required` 不会发出来；
    宠物用 `denied_approvals` 兜底提示。
-5. **只支持 macOS**：Windows / Linux 未测。
+5. **平台差异**：「压在菜单栏之上」只有 macOS 有（其它平台是系统自带的 `alwaysOnTop`）；
+   Linux 上的透明窗口需要开合成器（compositor）。
 6. **没有宠物选择器**：拖入即换，或直接改 `~/.deep-code-pet/pets`。
 
 ## 许可

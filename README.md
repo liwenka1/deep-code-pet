@@ -2,7 +2,7 @@
   <img src="src-tauri/icons/128x128@2x.png" alt="deep-code-pet icon" width="96" height="96">
   <h1>deep-code-pet</h1>
   <p>
-    <strong>A desktop pet that lives on your Mac</strong>
+    <strong>A desktop pet for macOS, Windows and Linux</strong>
     <br>
     Animated from local sprite assets, powered by the agent you already run in the terminal.
   </p>
@@ -14,6 +14,8 @@
       <img src="https://img.shields.io/github/license/liwenka1/deep-code-pet?style=flat-square" alt="License">
     </a>
     <img src="https://img.shields.io/badge/-macOS-black?style=flat-square&logo=apple&logoColor=white" alt="macOS">
+    <img src="https://img.shields.io/badge/-Windows-black?style=flat-square&logo=windows&logoColor=white" alt="Windows">
+    <img src="https://img.shields.io/badge/-Linux-black?style=flat-square&logo=linux&logoColor=white" alt="Linux">
   </p>
   <p>
     <a href="https://github.com/liwenka1/deep-code-pet/releases">Releases</a> •
@@ -44,7 +46,7 @@ have installed — same account, same configuration, no extra key.
 | **Conversation history** | A list window to switch, start and inspect conversations; each one is a file on disk. |
 | **Real agent, not a mock** | Tool calls, errors and turn ends all drive the animation; text goes to the chat panel. |
 | **Multi-monitor dragging** | Window position comes from the OS cursor, so dragging works across displays with mixed scaling. |
-| **Above the menu bar** | The pet window is raised to `NSStatusWindowLevel`, so it can sit at the very top of the screen. |
+| **Above the menu bar** | On macOS the pet window is raised to `NSStatusWindowLevel`, so it can sit at the very top of the screen; the other platforms get plain `alwaysOnTop`. |
 | **Tiny footprint** | Transparent frameless window that hugs the sprite; nothing but the pet is clickable. |
 
 ## How it works
@@ -113,7 +115,8 @@ Three ways to install a pet: drag the folder onto the window, drop it into
 
 ## Requirements
 
-- macOS (the only platform exercised so far)
+- macOS 10.15+, Windows 10/11, or Linux with WebKitGTK 4.1 (the published installers are built on
+  GitHub's macOS 14, Windows and Ubuntu 22.04 runners)
 - Node.js 20+ and pnpm
 - [Rust toolchain](https://rustup.rs) for building the app
 - `deepcode` installed and configured (`deepcode --version` works, `deepcode doctor` reports a key)
@@ -121,30 +124,45 @@ Three ways to install a pet: drag the folder onto the window, drop it into
 The app spawns `deepcode -p <prompt> --output-format stream-json` and inherits your environment, so
 billing goes to the same account and no API key is ever stored by the pet.
 
-Because a Finder-launched app does not inherit your shell `PATH`, the binary is resolved in this
+Because a GUI-launched app does not inherit your shell `PATH`, the binary is resolved in this
 order:
 
 1. `DEEP_CODE_PET_BIN` environment variable
-2. `deepcode` field in `~/Library/Application Support/dev.deepcode.pet/settings.json`
+2. `deepcode` field in the app's `settings.json` (`~/Library/Application Support/dev.deepcode.pet/`
+   on macOS, `%APPDATA%\dev.deepcode.pet\` on Windows, `~/.config/dev.deepcode.pet/` on Linux)
 3. `PATH`
 4. a login shell (`$SHELL -lic 'command -v deepcode'`) — this is what finds fnm / nvm / Homebrew
-   installs
-5. common install locations (fnm node-versions, nvm, `.local/bin`, `.bun`, `.volta`, Homebrew)
+   installs; on Windows the equivalent is `where deepcode`
+5. common install locations (fnm node-versions, nvm, `.local/bin`, `.bun`, `.volta`, Homebrew,
+   `%APPDATA%\npm`, `%LOCALAPPDATA%\pnpm`, Scoop)
 
-Once found, it prefers the sibling `deepcode-bin`: the npm `deepcode` entry point is a
-`#!/usr/bin/env node` script, and a GUI app has no `node` on its `PATH` either.
+Once found, it prefers the native binary behind the node script: the npm `deepcode` entry point is a
+`#!/usr/bin/env node` script, and a GUI app has no `node` on its `PATH` either. On macOS and Linux
+that is the sibling `deepcode-bin`. On Windows npm installs a `deepcode.cmd` shim that
+`CreateProcess` cannot run at all, so the shim is read for its real entry point and the package's own
+`bin\deepcode.exe` is used; when that is missing the script runs through `node.exe` — never through
+`cmd.exe`, which would interpret `&` and `%` inside your prompt.
 
 ## Download
 
-Grab the latest `.dmg` from [Releases](https://github.com/liwenka1/deep-code-pet/releases).
+Grab the installer for your platform from
+[Releases](https://github.com/liwenka1/deep-code-pet/releases):
 
-Because the build is currently unsigned, macOS blocks it on first launch:
+| Platform | Artifact |
+| :-- | :-- |
+| macOS (Apple Silicon / Intel) | `.dmg` |
+| Windows x64 | `-setup.exe` (NSIS) |
+| Linux x64 | `.AppImage` / `.deb` |
+
+Nothing is signed yet. macOS blocks the dmg on first launch:
 
 ```bash
 xattr -cr /Applications/deep-code-pet.app
 ```
 
-Run that once, then open the app again.
+Run that once, then open the app again. On Windows, SmartScreen greets an unsigned installer with
+"Windows protected your PC" — pick *More info → Run anyway*. The Linux artifacts are unsigned by
+nature: `chmod +x` the `.AppImage`, or install the `.deb` with your package manager.
 
 ## Local development
 
@@ -165,12 +183,14 @@ cd src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets -- -D w
 
 Every push to `main` and every pull request runs two jobs in
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml): `frontend (checks)` (syntax, self-tests,
-Vite build) and `rust (checks)` (rustfmt, clippy with `-D warnings`, cargo test,
-`tauri build --no-bundle`).
+Vite build, on Linux) and `rust (checks)` on macOS 14, Ubuntu and Windows (rustfmt, clippy with
+`-D warnings`, cargo test, `tauri build --no-bundle`). That three-platform matrix is what keeps the
+app honestly cross-platform.
 
 Releasing is a manual dispatch: **Actions → Release → Run workflow**, enter a version without the
 `v` prefix. It validates semver, requires `main`, writes the version into four files, commits, tags,
-builds both macOS architectures and uploads one dmg each to the same GitHub Release.
+then builds macOS (both architectures), Windows (NSIS installer) and Linux (deb + AppImage) and
+uploads every installer to the same GitHub Release.
 
 ## Known limitations
 
@@ -182,7 +202,8 @@ builds both macOS architectures and uploads one dmg each to the same GitHub Rele
    latency). Switching to a resident `deepcode serve` + SSE would not touch the reducer.
 4. **Approvals cannot be answered** — headless runs auto-deny, so `approval.required` never arrives;
    the pet falls back to `denied_approvals` for a hint.
-5. **macOS only** — Windows and Linux are untested.
+5. **Platform edges** — "above the menu bar" is macOS-only (the other platforms get plain
+   `alwaysOnTop`), and transparent windows on Linux need a compositing window manager.
 6. **No pet picker UI** — swap by dragging, or edit `~/.deep-code-pet/pets`.
 
 ## License
