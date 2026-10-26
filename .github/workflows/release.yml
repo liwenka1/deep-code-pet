@@ -89,9 +89,17 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -am "chore(release): v${{ inputs.version }}"
+          # The requested version may already be the one in the tree (re-cutting a
+          # release, or releasing straight after the initial commit). In that case
+          # there is nothing to commit and a plain `git commit` exits 1, so only
+          # commit when the bump actually changed something.
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -am "chore(release): v${{ inputs.version }}"
+            git push origin "HEAD:${{ github.ref_name }}"
+          else
+            echo "version ${{ inputs.version }} already in the tree; tagging the current commit"
+          fi
           git tag "v${{ inputs.version }}"
-          git push origin "HEAD:${{ github.ref_name }}"
           git push origin "v${{ inputs.version }}"
 
   build:
