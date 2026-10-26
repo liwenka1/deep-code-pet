@@ -116,6 +116,17 @@
 宠物会 spawn `deepcode -p <prompt> --output-format stream-json` 并继承你的环境，
 所以计费走同一账号，宠物自身不存 key。
 
+从 Finder 启动的 app **不会继承 shell 的 PATH**，所以可执行文件按这个顺序解析：
+
+1. 环境变量 `DEEP_CODE_PET_BIN`
+2. `~/Library/Application Support/dev.deepcode.pet/settings.json` 里的 `deepcode` 字段
+3. `PATH`
+4. 登录 shell（`$SHELL -lic 'command -v deepcode'`）—— fnm / nvm / Homebrew 装的都能问到
+5. 常见安装位置（fnm 的 node-versions、nvm、`.local/bin`、`.bun`、`.volta`、Homebrew）
+
+找到之后会优先用同目录的 `deepcode-bin`：npm 包里的 `deepcode` 是
+`#!/usr/bin/env node` 启动脚本，而 GUI 进程同样没有 `node`。
+
 ## 下载
 
 从 [Releases](https://github.com/liwenka1/deep-code-pet/releases) 下载最新 `.dmg`。

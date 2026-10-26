@@ -121,6 +121,19 @@ Three ways to install a pet: drag the folder onto the window, drop it into
 The app spawns `deepcode -p <prompt> --output-format stream-json` and inherits your environment, so
 billing goes to the same account and no API key is ever stored by the pet.
 
+Because a Finder-launched app does not inherit your shell `PATH`, the binary is resolved in this
+order:
+
+1. `DEEP_CODE_PET_BIN` environment variable
+2. `deepcode` field in `~/Library/Application Support/dev.deepcode.pet/settings.json`
+3. `PATH`
+4. a login shell (`$SHELL -lic 'command -v deepcode'`) — this is what finds fnm / nvm / Homebrew
+   installs
+5. common install locations (fnm node-versions, nvm, `.local/bin`, `.bun`, `.volta`, Homebrew)
+
+Once found, it prefers the sibling `deepcode-bin`: the npm `deepcode` entry point is a
+`#!/usr/bin/env node` script, and a GUI app has no `node` on its `PATH` either.
+
 ## Download
 
 Grab the latest `.dmg` from [Releases](https://github.com/liwenka1/deep-code-pet/releases).

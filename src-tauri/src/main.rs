@@ -49,6 +49,9 @@ struct PetEntry {
 struct PetSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    /// 可选：显式指定 deepcode 可执行文件路径（GUI 启动时 PATH 很短）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    deepcode: Option<String>,
 }
 
 /// 没有设置时的默认模型：flash（便宜、快，桌宠这种短对话够用）。
@@ -91,6 +94,149 @@ fn resolve_model(app: &tauri::AppHandle) -> String {
         }
     }
     DEFAULT_MODEL.to_string()
+}
+
+#[tauri::command]
+/// 找到 `deepcode` 可执行文件。
+///
+/// GUI 启动的进程只有极短的 PATH（`/usr/bin:/bin:/usr/sbin:/sbin`），所以从
+/// Finder / Dock 打开的 app 里 `Command::new("deepcode")` 会 ENOENT ——
+/// 表现就是"dev 下能聊，装成 .app 后只会出错了"。
+///
+/// 顺序：显式配置 → PATH → 登录 shell 的 `command -v` → 常见安装位置。
+/// 结果缓存一次，安装完 deepcode 后重启 app 即可。
+fn resolve_agent_bin(app: &tauri::AppHandle) -> Option<PathBuf> {
+    static CACHE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+
+    CACHE
+        .get_or_init(|| {
+            if let Ok(raw) = std::env::var("DEEP_CODE_PET_BIN") {
+                let path = PathBuf::from(raw.trim());
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+            if let Some(raw) = read_settings(app)
+                .deepcode
+                .filter(|value| !value.trim().is_empty())
+            {
+                let path = PathBuf::from(raw.trim());
+                if path.is_file() {
+                    return Some(path);
+                }
+            }
+            if let Some(found) = find_in_path() {
+                return Some(prefer_real_binary(found));
+            }
+            if let Some(found) = find_via_login_shell() {
+                return Some(prefer_real_binary(found));
+            }
+            common_install_locations()
+                .into_iter()
+                .find(|path| path.is_file())
+                .map(prefer_real_binary)
+        })
+        .clone()
+}
+
+/// npm 包里的 `deepcode` 是 `#!/usr/bin/env node` 启动脚本，而 GUI 进程同样没有 `node`。
+/// 同目录（**真实路径**的同目录）的 `deepcode-bin` 才是原生二进制 —— 用它可绕开 node。
+fn prefer_real_binary(path: PathBuf) -> PathBuf {
+    // 常见布局是 `bin/deepcode` 符号链接到 `.../lib/node_modules/<pkg>/bin/deepcode`，
+    // 真正的二进制在那个真实目录里，所以要先解析链接。
+    let real = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+    let sibling = real.with_file_name("deepcode-bin");
+    if sibling.is_file() {
+        return sibling;
+    }
+    let direct = path.with_file_name("deepcode-bin");
+    if direct.is_file() {
+        return direct;
+    }
+    path
+}
+
+fn find_in_path() -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("deepcode"))
+        .find(|candidate| candidate.is_file())
+}
+
+/// 走登录 shell 问一次：`fnm` / `nvm` / `homebrew` 之类只在 shell 配置里加 PATH。
+fn find_via_login_shell() -> Option<PathBuf> {
+    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".to_string());
+    // -l 加载登录配置；-i 再加载交互配置（fnm / nvm 通常写在 .zshrc 里）。
+    for flags in ["-lic", "-lc", "-ic"] {
+        let output = match std::process::Command::new(&shell)
+            .arg(flags)
+            .arg("command -v deepcode")
+            .stdin(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .output()
+        {
+            Ok(output) => output,
+            Err(_) => continue,
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        for line in text.lines() {
+            let candidate = PathBuf::from(line.trim());
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+fn common_install_locations() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(home) = home() {
+        for relative in [
+            ".local/bin/deepcode",
+            ".bun/bin/deepcode",
+            ".volta/bin/deepcode",
+            ".npm-global/bin/deepcode",
+            ".npm/bin/deepcode",
+            "Library/pnpm/deepcode",
+        ] {
+            out.push(home.join(relative));
+        }
+        // fnm 的多 shell 目录（`~/.local/state/fnm_multishells/<id>/bin`）
+        if let Ok(entries) = fs::read_dir(home.join(".local/state/fnm_multishells")) {
+            for entry in entries.flatten() {
+                out.push(entry.path().join("bin/deepcode"));
+            }
+        }
+        // fnm 的稳定安装目录（multishells 会被清理，这里是长期的）
+        if let Ok(entries) = fs::read_dir(home.join(".local/share/fnm/node-versions")) {
+            for entry in entries.flatten() {
+                out.push(entry.path().join("installation/bin/deepcode"));
+            }
+        }
+        // nvm
+        if let Ok(entries) = fs::read_dir(home.join(".nvm/versions/node")) {
+            for entry in entries.flatten() {
+                out.push(entry.path().join("bin/deepcode"));
+            }
+        }
+    }
+    for absolute in [
+        "/opt/homebrew/bin/deepcode",
+        "/usr/local/bin/deepcode",
+        "/usr/bin/deepcode",
+    ] {
+        out.push(PathBuf::from(absolute));
+    }
+    out
+}
+
+#[tauri::command]
+fn get_agent_bin(app: tauri::AppHandle) -> Option<String> {
+    resolve_agent_bin(&app).map(|path| path.display().to_string())
 }
 
 #[tauri::command]
@@ -166,19 +312,37 @@ fn load_history(
 }
 
 #[tauri::command]
-fn doctor_summary(deepcode: Option<String>) -> Result<serde_json::Value, String> {
+fn doctor_summary(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
     // 借 deep-code 自己的体检报告回答"我能不能用"：
     // key 是哪来的（file / env / missing）、用的是哪个模型、配置在哪儿。
-    let bin = deepcode.unwrap_or_else(|| "deepcode".to_string());
+    let bin = resolve_agent_bin(&app).ok_or_else(missing_agent_message)?;
     let output = Command::new(&bin)
         .arg("doctor")
         .arg("--json")
         .output()
-        .map_err(|error| format!("跑不起 `{bin}`: {error}"))?;
+        .map_err(|error| format!("跑不起 `{}`: {error}", bin.display()))?;
     if !output.status.success() {
         return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
     }
     serde_json::from_slice(&output.stdout).map_err(|error| format!("doctor 输出解析失败: {error}"))
+}
+
+fn child_path(bin: &Path) -> std::ffi::OsString {
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Some(parent) = bin.parent() {
+        dirs.push(parent.to_path_buf());
+    }
+    if let Some(existing) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&existing));
+    }
+    std::env::join_paths(dirs).unwrap_or_else(|_| std::env::var_os("PATH").unwrap_or_default())
+}
+
+fn missing_agent_message() -> String {
+    "找不到 deepcode 可执行文件。GUI 启动的 app 不继承 shell 的 PATH，请先在终端确认 \
+     `deepcode --version` 能输出，然后重启本应用；或在 settings.json 里指定 deepcode 路径，\
+     或设置环境变量 DEEP_CODE_PET_BIN。"
+        .to_string()
 }
 
 #[tauri::command]
@@ -631,10 +795,11 @@ fn agent_workspace(app: &tauri::AppHandle) -> PathBuf {
 async fn ask_deepcode(
     app: tauri::AppHandle,
     prompt: String,
-    deepcode: Option<String>,
     workspace: Option<String>,
 ) -> Result<(), String> {
-    let bin = deepcode.unwrap_or_else(|| "deepcode".to_string());
+    // GUI 启动的进程 PATH 很短：显式解析一次，解析不到就直接把原因返回给前端，
+    // 而不是让 spawn 失败后只留一个"出错了"。
+    let bin = resolve_agent_bin(&app).ok_or_else(missing_agent_message)?;
     let cwd = workspace
         .map(PathBuf::from)
         .unwrap_or_else(|| agent_workspace(&app));
@@ -663,14 +828,15 @@ async fn ask_deepcode(
         }
         command
             .env("DEEP_CODE_MODEL", &model)
+            // GUI 进程的 PATH 很短；把 deepcode 所在目录并进去，间接让 node 等工具可见。
+            .env("PATH", child_path(&bin))
             .current_dir(&cwd)
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
-
         let mut child = match command.spawn() {
             Ok(child) => child,
             Err(error) => {
-                eprintln!("[pet] spawn `{bin}` failed: {error}");
+                eprintln!("[pet] spawn `{}` failed: {error}", bin.display());
                 let _ = app.emit("brain-done", -1i32);
                 return;
             }
@@ -919,6 +1085,47 @@ fn raise_above_menu_bar(window: &tauri::WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(all(test, unix))]
+mod tests {
+    use super::prefer_real_binary;
+    use std::fs;
+
+    /// 常见布局：`bin/deepcode` 是指向 `lib/node_modules/<pkg>/bin/deepcode` 的符号链接，
+    /// 真正的二进制 `deepcode-bin` 在链接**目标**旁边。解析必须穿过链接。
+    #[test]
+    fn prefers_real_binary_behind_symlink() {
+        let root = std::env::temp_dir().join(format!("pet-binary-test-{}", std::process::id()));
+        let package_bin = root.join("lib/node_modules/pkg/bin");
+        fs::create_dir_all(&package_bin).unwrap();
+        fs::write(package_bin.join("deepcode"), "#!/usr/bin/env node\n").unwrap();
+        fs::write(package_bin.join("deepcode-bin"), "native").unwrap();
+
+        let shim_dir = root.join("bin");
+        fs::create_dir_all(&shim_dir).unwrap();
+        let shim = shim_dir.join("deepcode");
+        std::os::unix::fs::symlink("../lib/node_modules/pkg/bin/deepcode", &shim).unwrap();
+
+        let resolved = prefer_real_binary(shim);
+        assert_eq!(
+            resolved.file_name().and_then(|name| name.to_str()),
+            Some("deepcode-bin")
+        );
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// 没有 `deepcode-bin` 时不要乱改路径（例如用户显式指定了别的可执行文件）。
+    #[test]
+    fn keeps_plain_binary_untouched() {
+        let root = std::env::temp_dir().join(format!("pet-binary-plain-{}", std::process::id()));
+        fs::create_dir_all(&root).unwrap();
+        let binary = root.join("deepcode");
+        fs::write(&binary, "native").unwrap();
+
+        assert_eq!(prefer_real_binary(binary.clone()), binary);
+        fs::remove_dir_all(&root).ok();
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .manage(DragHandle::default())
@@ -947,6 +1154,7 @@ fn main() {
             set_current_session,
             load_history,
             doctor_summary,
+            get_agent_bin,
             get_model,
             set_model,
             drag_begin,

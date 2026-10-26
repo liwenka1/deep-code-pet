@@ -460,6 +460,19 @@ if (tauri) {
     });
   });
 
+  // 先确认能不能找到 deepcode：GUI 启动的 app 不继承 shell 的 PATH，
+  // 解析不到就在卡片里明确说出来，别让用户对着"出错了"猜。
+  tauri.core
+    .invoke("get_agent_bin")
+    .then((bin) => {
+      if (bin) {
+        console.info(`[pet] deepcode: ${bin}`);
+        return;
+      }
+      notify("找不到 deepcode：先在终端确认 `deepcode --version` 能跑，然后重启本应用");
+    })
+    .catch(() => {});
+
   // 体检：key 从哪来、模型是什么。缺 key 就直接说清楚，而不是等用户看到"出错了"。
   tauri.core
     .invoke("doctor_summary")
