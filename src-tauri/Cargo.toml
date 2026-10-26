@@ -2,7 +2,8 @@
 name = "deep-code-pet"
 version = "0.0.1"
 edition = "2021"
-description = "deep-code 的桌面化身"
+description = "桌面宠物：本地精灵图集 + deep-code 驱动的对话"
+license = "MIT"
 
 # 这个目录可能被放进别的仓库里；声明自己的 workspace，避免被外层 Cargo 误认。
 [workspace]
