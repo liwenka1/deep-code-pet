@@ -251,7 +251,7 @@ push 到 `main` 或开 PR 时自动跑，两个 job 都绿才算过：
 
 | job | 跑在哪 | 内容 |
 |---|---|---|
-| `web` | ubuntu | `node --check` 全部 js/mjs → `node selftest.mjs`（45 条）→ `vite build` |
+| `frontend` | ubuntu | `node --check` 全部 js/mjs → `node selftest.mjs`（45 条）→ `vite build` |
 | `rust` | macos-14 | `cargo fmt --check` → `cargo clippy -D warnings` → `cargo test` → `tauri build --no-bundle` |
 
 `--no-bundle` 只编译不打包：它能证伪"配置坏了 / 代码编不过"，又不会让每次 push 花十几分钟。

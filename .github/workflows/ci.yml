@@ -1,11 +1,13 @@
 # CI gate for deep-code-pet
 #
-# 触发：push 到 main、所有 pull request、手动。
-# 检查：JS 语法 + 40 条离线自测 + 前端构建，然后 fmt / clippy(-D warnings) /
-#      cargo test / `tauri build --no-bundle`（验证 tauri.conf 与真机编译）。
+# Triggers: push to main, any pull request, manual dispatch.
+# Two jobs must both pass:
+#   frontend - JS syntax, offline self-tests, Vite build
+#   rust     - rustfmt, clippy (-D warnings), cargo test, `tauri build --no-bundle`
 #
-# 为什么 Rust 那份跑在 macOS：Tauri 的 macOS 后端要链系统框架，Linux 上装不了；
-# 而且 --no-bundle 只编译不打包，能在几分钟内证伪"配置坏了/代码编不过"。
+# The rust job runs on macOS because the Tauri macOS backend links system
+# frameworks. `--no-bundle` compiles without packaging, which catches broken
+# config and compile errors in minutes; full dmg builds live in release.yml.
 
 name: CI
 
@@ -18,17 +20,21 @@ on:
 permissions:
   contents: read
 
+# A new push supersedes the previous run instead of queueing behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  web:
-    name: web · 语法 · 自测 · 构建
+  frontend:
+    name: frontend (checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 仓库里没有 lock 之外的来源；pnpm-lock.yaml 是唯一的锁。
       - uses: pnpm/action-setup@v4
         with:
           version: 10
@@ -38,20 +44,20 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: 安装依赖
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: 语法检查
+      - name: Syntax check
         run: for f in *.js *.mjs; do node --check "$f"; done
 
-      - name: 离线自测（素材模型 / 状态机 / 素材校验 / 事件翻译）
+      - name: Offline self-tests
         run: node selftest.mjs
 
-      - name: 前端构建
-        run: npm run build
+      - name: Build frontend
+        run: pnpm build
 
   rust:
-    name: rust · fmt · clippy · test · build
+    name: rust (checks)
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -64,15 +70,15 @@ jobs:
         with:
           workspaces: src-tauri
 
-      - name: 格式检查
+      - name: rustfmt
         run: cargo fmt --all -- --check
         working-directory: src-tauri
 
-      - name: clippy（warning 即失败）
+      - name: clippy (warnings are errors)
         run: cargo clippy --all-targets -- -D warnings
         working-directory: src-tauri
 
-      - name: 单元测试
+      - name: cargo test
         run: cargo test
         working-directory: src-tauri
 
@@ -85,10 +91,8 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: 安装依赖
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # --no-bundle：只验证"能编、配置合法"，不产 dmg。
-      # 完整打包在 release.yml 里做，避免每次 push 都花十几分钟。
-      - name: Tauri 构建（不打包）
+      - name: Tauri build (no bundle)
         run: pnpm exec tauri build --no-bundle
