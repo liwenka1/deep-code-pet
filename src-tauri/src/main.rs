@@ -426,7 +426,9 @@ fn list_conversations(app: tauri::AppHandle, limit: Option<usize>) -> Vec<Conver
                 .collect()
         })
         .unwrap_or_default();
-    out.sort_by(|a, b| b.updated_at_ms.cmp(&a.updated_at_ms));
+    // 新的在前；用 sort_by_key 而不是 sort_by，避免新版 clippy 的
+    // `unnecessary_sort_by` 报警（CI 的 stable 比本地工具链新）。
+    out.sort_by_key(|entry| std::cmp::Reverse(entry.updated_at_ms));
     out.truncate(limit.unwrap_or(30));
     out
 }
@@ -585,7 +587,9 @@ fn list_pets() -> Vec<PetEntry> {
             });
         }
     }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
+    // 名字升序。同样避开 `unnecessary_sort_by`：键是 String，这里直接 clone
+    // （最多几十只宠物，成本可以忽略）。
+    out.sort_by_key(|entry| entry.name.clone());
     out
 }
 
