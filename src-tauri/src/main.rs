@@ -87,6 +87,9 @@ struct PetSettings {
 const DEFAULT_MODEL: &str = "deepseek-flash";
 /// 只给这个 app 用的覆盖位，避免和用户自己的 DEEP_CODE_MODEL 打架。
 const PET_MODEL_ENV: &str = "DEEP_CODE_PET_MODEL";
+/// 让 deep-code 把所有工具都卸载掉（它读这个变量就一个都不挂）。
+/// 见 deep-code-agent 的 `tools_enabled()`；旧版本不认识，只会忽略。
+const DISABLE_TOOLS_ENV: &str = "DEEP_CODE_DISABLE_TOOLS";
 
 fn settings_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     app.path()
@@ -519,6 +522,9 @@ fn agent_command(bin: &Path) -> Result<Command, String> {
             command
         }
     };
+    // 宠物只聊天：让 deep-code 一个工具都不挂（请求里也就没有工具 schema），
+    // 而不是靠 persona 劝模型别用。老版本不认识这个变量，只会忽略。
+    command.env(DISABLE_TOOLS_ENV, "1");
     hide_console(&mut command);
     Ok(command)
 }
@@ -1474,7 +1480,8 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_shim, prefer_real_binary, sync_persona, windows_native_from_shim, DEFAULT_PERSONA,
+        agent_command, parse_shim, prefer_real_binary, sync_persona, windows_native_from_shim,
+        DEFAULT_PERSONA, DISABLE_TOOLS_ENV,
     };
     use std::fs;
     use std::path::PathBuf;
@@ -1603,6 +1610,17 @@ endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & \"%_prog%\"  \"%dp0%\\n
 
         assert_eq!(prefer_real_binary(binary.clone()), binary);
         fs::remove_dir_all(&root).ok();
+    }
+
+    /// 宠物只聊天：每条 deep-code 进程都必须带「不要工具」这个环境变量。
+    #[test]
+    fn agent_processes_run_without_tools() {
+        let command = agent_command(std::path::Path::new("deepcode")).unwrap();
+        let value = command
+            .get_envs()
+            .find(|(key, _)| key.to_string_lossy() == DISABLE_TOOLS_ENV)
+            .and_then(|(_, value)| value.map(|value| value.to_string_lossy().to_string()));
+        assert_eq!(value.as_deref(), Some("1"));
     }
 
     /// 人格文件只覆盖「我们写的」那份：没有就写、旧版就升级、被用户接管就不动。

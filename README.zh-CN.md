@@ -32,6 +32,8 @@
 
 - **本地优先**：素材、人格、对话历史都在你自己的目录里
 - **不自带模型**：宠物只是 spawn 本地的 `deepcode`，自身不存任何凭证
+- **真的只聊天**：每轮都带 `DEEP_CODE_DISABLE_TOOLS=1` 起 `deepcode`，工具一个都不挂
+  （读文件、执行命令、联网都没有）—— 不是写句提示词劝模型别用
 - **多窗口**：宠物是透明浮层，聊天与历史是独立面板，展开面板不会挪动宠物
 
 ## 功能一览
@@ -123,7 +125,8 @@
   GitHub 的 macOS 14、Windows、Ubuntu 22.04 runner 上构建
 - Node.js 20+ 与 pnpm
 - 编译需要 [Rust 工具链](https://rustup.rs)
-- 已安装并配置好的 `deepcode`（`deepcode --version` 有输出，`deepcode doctor` 能看到 key）
+- 已安装并配置好的 `deepcode`（`deepcode --version` 有输出，`deepcode doctor` 能看到 key）；
+  v0.4.18+ 才能用 `DEEP_CODE_DISABLE_TOOLS` 真正关掉工具
 
 宠物会 spawn `deepcode -p <prompt> --output-format stream-json` 并继承你的环境，
 所以计费走同一账号，宠物自身不存 key。
@@ -198,8 +201,9 @@ push 到 `main` 和每个 PR 都会跑 [`.github/workflows/ci.yml`](.github/work
 2. **没有气泡**：所有文字都在聊天面板；短暂通知是 4 秒后消失的卡片。
 3. **一轮一个进程**：每句话 spawn 一次 `deepcode -p`（约 0.1–0.3s 加模型延迟）。
    换成常驻 `deepcode serve` + SSE 的话，reducer 不用改。
-4. **审批无法回答**：无头模式一律自动拒绝，`approval.required` 不会发出来；
-   宠物用 `denied_approvals` 兜底提示。
+4. **没有任何工具（设计如此）**：宠物用 `DEEP_CODE_DISABLE_TOOLS=1` 起 `deepcode`，
+   所以没有东西要审批、也没有东西可执行 —— 让它改代码，它会让你去找编程助手。
+   （`deepcode` 0.4.18 之前的版本不认识这个变量，会退回 persona 里的文字约定。）
 5. **平台差异**：「压在菜单栏之上」只有 macOS 有（其它平台是系统自带的 `alwaysOnTop`）；
    Linux 上的透明窗口需要开合成器（compositor）。
 6. **没有宠物选择器**：拖入即换，或直接改 `~/.deep-code-pet/pets`。

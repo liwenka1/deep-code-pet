@@ -33,6 +33,8 @@ have installed — same account, same configuration, no extra key.
 
 - **Local-first**: sprites, persona and conversation history all live in your own folders
 - **No bundled model**: the pet shells out to your local `deepcode`; the app itself stores no credentials
+- **Chat only, for real**: every turn sets `DEEP_CODE_DISABLE_TOOLS=1`, so deep-code mounts no tools at
+  all — no file reads, no shell, no web. That is the registry being empty, not a prompt asking nicely
 - **Separate windows**: the pet is a transparent overlay, chat and history are their own panels, so
   opening a panel never moves the pet
 
@@ -129,7 +131,8 @@ persona changes; delete that line and the file is yours, the app will not touch 
   GitHub's macOS 14, Windows and Ubuntu 22.04 runners)
 - Node.js 20+ and pnpm
 - [Rust toolchain](https://rustup.rs) for building the app
-- `deepcode` installed and configured (`deepcode --version` works, `deepcode doctor` reports a key)
+- `deepcode` installed and configured (`deepcode --version` works, `deepcode doctor` reports a key);
+  v0.4.18+ is what makes `DEEP_CODE_DISABLE_TOOLS` actually unmount the tools
 
 The app spawns `deepcode -p <prompt> --output-format stream-json` and inherits your environment, so
 billing goes to the same account and no API key is ever stored by the pet.
@@ -210,8 +213,10 @@ uploads every installer to the same GitHub Release.
    four seconds.
 3. **One process per turn** — each message spawns `deepcode -p` (roughly 0.1–0.3 s plus model
    latency). Switching to a resident `deepcode serve` + SSE would not touch the reducer.
-4. **Approvals cannot be answered** — headless runs auto-deny, so `approval.required` never arrives;
-   the pet falls back to `denied_approvals` for a hint.
+4. **No tools at all, by design** — the pet starts `deepcode` with `DEEP_CODE_DISABLE_TOOLS=1`, so
+   there is nothing to approve and nothing to execute; ask it to fix code and it points you at your
+   coding assistant. (Before deep-code 0.4.18 the variable is ignored and the persona's own wording
+   is all that keeps it in its lane.)
 5. **Platform edges** — "above the menu bar" is macOS-only (the other platforms get plain
    `alwaysOnTop`), and transparent windows on Linux need a compositing window manager.
 6. **No pet picker UI** — swap by dragging, or edit `~/.deep-code-pet/pets`.
