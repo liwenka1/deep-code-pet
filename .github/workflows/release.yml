@@ -1,0 +1,142 @@
+# Release workflow for deep-code-pet
+#
+# 用法：Actions → Release → Run workflow，输入版本号（不带 v，例如 0.2.0）。
+# 它做四件事：
+#   1. 校验 semver、确认 tag 没被占用；
+#   2. 把版本号同时写进 package.json / src-tauri/tauri.conf.json /
+#      src-tauri/Cargo.toml / Cargo.lock（四处必须一致，否则产物自称的版本是错的）；
+#   3. 提交 + 打 tag + 推回当前分支；
+#   4. 两个 macOS 架构各打一个 .dmg，挂到同一个 GitHub Release 上。
+#
+# 注意两件事：
+#   - **未签名**。没有开发者证书时 Tauri 出的是未签名 dmg，用户首次打开需要
+#     右键 → 打开（或 xattr -dr com.apple.quarantine）。要签名就把下面 build
+#     步骤里的 APPLE_* secret 接上，并加 notarize。
+#   - 用 GITHUB_TOKEN 推的提交**不会**再触发 ci.yml（GitHub 防递归）。所以发版
+#     前请确保 main 上的 CI 是绿的；想"发版后再跑 CI"得换 PAT。
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不带 v，例如 0.2.0）'
+        required: true
+        type: string
+      prerelease:
+        description: '标记为预发布'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: 校验版本 · 改四处 · 打 tag
+    # 这里只改文件 + 提交 + 打 tag，不需要 Rust 工具链，跑 ubuntu 更快
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 只允许从 main 发版
+        if: ${{ github.ref_name != 'main' }}
+        run: |
+          echo "::error::release 请从 main 分支触发（当前是 '${GITHUB_REF_NAME}'）"
+          exit 1
+
+      - name: 校验版本号与 tag
+        run: |
+          V="${{ inputs.version }}"
+          echo "$V" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' \
+            || { echo "::error::版本号必须是 x.y.z 形式：$V"; exit 1; }
+          if git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            echo "::error::tag v$V 已经存在"; exit 1
+          fi
+
+      - name: 四处版本号一起改
+        run: |
+          V="${{ inputs.version }}"
+          node -e '
+            const fs = require("fs");
+            const v = process.argv[1];
+            for (const file of ["package.json", "src-tauri/tauri.conf.json"]) {
+              const json = JSON.parse(fs.readFileSync(file, "utf8"));
+              json.version = v;
+              fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+            }
+          ' "$V"
+          sed -i.bak -E 's/^version = ".*"/version = "'"$V"'"/' src-tauri/Cargo.toml
+          rm -f src-tauri/Cargo.toml.bak
+          # Cargo.lock 里本包的条目（只改紧跟 name 的那一行 version）
+          sed -i.bak -E '/^name = "deep-code-pet"$/,/^version = / s/^version = ".*"/version = "'"$V"'"/' src-tauri/Cargo.lock
+          rm -f src-tauri/Cargo.lock.bak
+          git --no-pager diff --stat
+
+      - name: 提交 · 打 tag · 推
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): v${{ inputs.version }}"
+          git tag "v${{ inputs.version }}"
+          git push origin "HEAD:${{ github.ref_name }}"
+          git push origin "v${{ inputs.version }}"
+
+  build:
+    name: 打包 ${{ matrix.name }}
+    needs: prepare
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: darwin-arm64
+            target: aarch64-apple-darwin
+          - name: darwin-x64
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 构建 .app + .dmg
+        run: pnpm exec tauri build --target ${{ matrix.target }}
+
+      - name: 上传到 Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          files: |
+            src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg

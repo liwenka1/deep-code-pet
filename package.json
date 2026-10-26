@@ -1,0 +1,19 @@
+{
+  "name": "deep-code-pet",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "桌面宠物：读本地宠物素材，用 deep-code 当大脑",
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "test": "node selftest.mjs",
+    "tauri": "tauri",
+    "app": "tauri dev"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "vite": "^5"
+  }
+}

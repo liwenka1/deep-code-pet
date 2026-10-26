@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>deep-code-pet</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!-- 宠物本体：拖动由 JS 自己实现（原生 drag-region 会让 webview 收不到指针事件） -->
+    <div id="pet">
+      <button id="chat-btn" type="button" title="打开对话">💬</button>
+      <div id="sprite"></div>
+    </div>
+
+    <!-- 拖入宠物文件夹时的提示层 -->
+    <div id="drop" hidden>
+      <div class="drop-card">松手换上这只宠物</div>
+    </div>
+
+    <!-- 空状态 / 短通知：一张会自动消失的卡片（气泡已删除） -->
+    <div id="hint">拖入宠物开始</div>
+
+    <script type="module" src="./main.js"></script>
+  </body>
+</html>

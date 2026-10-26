@@ -1,0 +1,138 @@
+/* 宠物窗口（main）：透明、无边框、只画精灵和气泡。 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent; /* 关键：窗口必须透明，否则置顶窗口会糊住整个屏幕 */
+  overflow: hidden;
+  font-family: -apple-system, "SF Pro Text", "PingFang SC", system-ui, sans-serif;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+#pet {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 0 6px 6px 0;
+  z-index: 1;
+}
+
+/* 宠物贴住窗口的哪个角，由 Rust 侧决定的 anchor 驱动（br/bl/tr/tl）。
+   窗口从反方向长出来，所以缩放的宠物的屏幕位置不动。 */
+body[data-anchor="bl"] #pet {
+  justify-content: flex-start;
+  padding: 0 0 6px 6px;
+}
+body[data-anchor="tr"] #pet {
+  align-items: flex-start;
+  padding: 6px 6px 0 0;
+}
+body[data-anchor="tl"] #pet {
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 6px 0 0 6px;
+}
+
+/* 精灵图：一张 atlas 做 background，按帧改 background-position */
+#sprite {
+  width: var(--sprite-w, 192px);
+  height: var(--sprite-h, 208px);
+  background-repeat: no-repeat;
+  image-rendering: pixelated; /* 像素风放大不要糊 */
+  filter: drop-shadow(0 6px 10px rgb(0 0 0 / 35%));
+  cursor: grab;
+}
+#sprite:active {
+  cursor: grabbing;
+}
+#sprite.empty {
+  display: none;
+}
+
+
+/* 拖入时的覆盖层：只在拖动过程中出现 */
+#drop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(42 109 244 / 18%);
+  border: 2px dashed rgb(120 170 255 / 85%);
+  border-radius: 12px;
+  pointer-events: none; /* 不拦 drop 事件 */
+}
+#drop[hidden] {
+  display: none;
+}
+.drop-card {
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgb(28 28 30 / 94%);
+  color: #f5f5f7;
+  font-size: 13px;
+  box-shadow: 0 6px 20px rgb(0 0 0 / 45%);
+}
+
+/* 悬停时出现的小按钮：明确"点这里开对话"，取代有歧义的双击 */
+#chat-btn {
+  position: absolute;
+  right: 4px;
+  bottom: calc(var(--sprite-h, 208px) - 22px);
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgb(28 28 30 / 92%);
+  color: #f2f2f4;
+  font-size: 11px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.9);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none; /* 没显示时不挡点击，也不吃拖动 */
+  box-shadow: 0 2px 8px rgb(0 0 0 / 40%);
+  z-index: 25;
+}
+#pet:hover #chat-btn,
+#chat-btn:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+  pointer-events: auto;
+}
+#chat-btn:hover {
+  background: #2a6df4;
+}
+
+/* 空状态卡片：没有宠物时窗口是透明的，白字在浅色壁纸上等于看不见，
+   所以这里必须有底色。 */
+#hint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 86%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  background: rgb(28 28 30 / 93%);
+  color: #f2f2f4;
+  font-size: 13px;
+  line-height: 1.65;
+  text-align: center;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 45%);
+  pointer-events: none;
+}
+#hint[hidden] {
+  display: none;
+}

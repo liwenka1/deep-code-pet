@@ -1,0 +1,94 @@
+# CI gate for deep-code-pet
+#
+# 触发：push 到 main、所有 pull request、手动。
+# 检查：JS 语法 + 40 条离线自测 + 前端构建，然后 fmt / clippy(-D warnings) /
+#      cargo test / `tauri build --no-bundle`（验证 tauri.conf 与真机编译）。
+#
+# 为什么 Rust 那份跑在 macOS：Tauri 的 macOS 后端要链系统框架，Linux 上装不了；
+# 而且 --no-bundle 只编译不打包，能在几分钟内证伪"配置坏了/代码编不过"。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  web:
+    name: web · 语法 · 自测 · 构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 仓库里没有 lock 之外的来源；pnpm-lock.yaml 是唯一的锁。
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 语法检查
+        run: for f in *.js *.mjs; do node --check "$f"; done
+
+      - name: 离线自测（素材模型 / 状态机 / 素材校验 / 事件翻译）
+        run: node selftest.mjs
+
+      - name: 前端构建
+        run: npm run build
+
+  rust:
+    name: rust · fmt · clippy · test · build
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: 格式检查
+        run: cargo fmt --all -- --check
+        working-directory: src-tauri
+
+      - name: clippy（warning 即失败）
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+
+      - name: 单元测试
+        run: cargo test
+        working-directory: src-tauri
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      # --no-bundle：只验证"能编、配置合法"，不产 dmg。
+      # 完整打包在 release.yml 里做，避免每次 push 都花十几分钟。
+      - name: Tauri 构建（不打包）
+        run: pnpm exec tauri build --no-bundle

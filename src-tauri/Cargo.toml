@@ -1,0 +1,23 @@
+[package]
+name = "deep-code-pet"
+version = "0.0.1"
+edition = "2021"
+description = "deep-code 的桌面化身"
+
+# 这个目录可能被放进别的仓库里；声明自己的 workspace，避免被外层 Cargo 误认。
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+# 把宠物窗口抬到菜单栏之上（NSStatusWindowLevel）：alwaysOnTop 只给 floating(3)，
+# 而菜单栏是 24，所以贴到屏幕顶部时永远被菜单栏盖住。
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+
+[dependencies]
+# macos-private-api 是「透明窗口 + 无边框浮层」在 macOS 上必需的开关。
+tauri = { version = "2", features = ["macos-private-api"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"

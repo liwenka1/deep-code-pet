@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>历史对话</title>
+    <link rel="stylesheet" href="./history.css" />
+  </head>
+  <body>
+    <header id="head" data-tauri-drag-region>
+      <span id="title">历史对话</span>
+      <span id="actions">
+        <button id="new" type="button" title="新建对话">＋ 新建</button>
+        <button id="close" type="button" title="收起 (Esc)">✕</button>
+      </span>
+    </header>
+
+    <div id="list" role="listbox" aria-label="历史对话"></div>
+
+    <footer id="empty" hidden>还没有对话</footer>
+
+    <script type="module" src="./history.js"></script>
+  </body>
+</html>

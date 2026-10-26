@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>deep-code-pet</title>
+    <link rel="stylesheet" href="./chat.css" />
+  </head>
+  <body>
+    <header id="head" data-tauri-drag-region>
+      <span id="title">聊天</span>
+      <button id="close" type="button" title="收起 (Esc)">✕</button>
+    </header>
+
+    <div id="log" aria-live="polite"></div>
+
+    <form id="form">
+      <textarea id="input" rows="1" placeholder="说点什么…  Enter 发送 / Shift+Enter 换行"></textarea>
+      <button id="send" type="submit">发送</button>
+    </form>
+
+    <script type="module" src="./chat.js"></script>
+  </body>
+</html>
