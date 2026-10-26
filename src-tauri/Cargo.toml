@@ -1,6 +1,6 @@
 [package]
 name = "deep-code-pet"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "桌面宠物：本地精灵图集 + deep-code 驱动的对话"
 license = "MIT"
