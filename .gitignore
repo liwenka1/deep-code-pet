@@ -3,6 +3,10 @@ node_modules/
 .pnpm-store/
 dist/
 coverage/
+.tanstack/
+.output/
+test-results/
+playwright-report/
 *.tsbuildinfo
 .npm/
 *.log
@@ -33,7 +37,8 @@ src-tauri/gen/
 .Trashes
 
 # ── 编辑器 / IDE ─────────────────────────────────────────────────────────
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo

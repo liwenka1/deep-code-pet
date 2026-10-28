@@ -123,7 +123,7 @@
 
 - macOS 10.15+ / Windows 10 及以上 / Linux（需要 WebKitGTK 4.1）；发布出来的安装包在
   GitHub 的 macOS 14、Windows、Ubuntu 22.04 runner 上构建
-- Node.js 20+ 与 pnpm
+- Node.js 22.12+ 与 pnpm
 - 编译需要 [Rust 工具链](https://rustup.rs)
 - 已安装并配置好的 `deepcode`（`deepcode --version` 有输出，`deepcode doctor` 能看到 key）；
   v0.4.18+ 才能用 `DEEP_CODE_DISABLE_TOOLS` 真正关掉工具
@@ -173,10 +173,51 @@ xattr -cr /Applications/deep-code-pet.app
 
 ```bash
 pnpm install      # 装依赖
-pnpm test         # 离线自测（45 条断言，不需要网络与 Tauri）
+pnpm test         # Vitest：动画、协议、回合隔离、素材加载回归测试
 pnpm app          # tauri dev
-pnpm build        # 只构建前端
+pnpm build        # 构建 SPA 静态资源并执行 TypeScript 检查
+pnpm preview      # 预览实际嵌入安装包的静态资源（先 build）
 ```
+
+浏览器回归测试使用模拟的 Tauri IPC，不会调用真实模型：
+
+```bash
+pnpm exec playwright install chromium  # 首次安装浏览器
+pnpm test:e2e                         # 先执行 pnpm build
+```
+
+### 项目结构
+
+编辑器配置在 `.vscode/settings.json`：使用项目内的 TypeScript 6 SDK，并将 Rust 工程关联到
+`src-tauri/Cargo.toml`。安装依赖后，如编辑器仍使用旧诊断，可重启 TypeScript / Rust 语言服务。
+
+前端使用 **React + TypeScript + TanStack Start（SPA）+ Vite**，异步列表查询使用 TanStack Query。
+桌面端只嵌入静态资源，不启动 Start 的 Node 服务。构建时仍会预渲染文档外壳；窗口界面在客户端挂载后初始化 Tauri API。
+
+```text
+src/
+├── routes/             # Start 路由及文档外壳
+├── windows/            # pet / chat / history 的组件与交互
+├── core/               # 不依赖 React 的动画、素材校验和聊天状态
+├── platform/           # 类型化的 Tauri 命令、事件和数据契约
+└── shared/             # 窗口外观和共享 hooks
+src-tauri/src/
+├── agent/              # 可执行文件解析、人格、进程生命周期
+├── conversations.rs    # 会话文件与当前会话指针
+├── pets.rs             # 本地素材读取
+├── settings.rs         # 设置
+└── windows.rs          # 窗口、菜单、拖拽与跨屏布局
+```
+
+`pnpm build` 先生成 `dist/client`，再通过 `scripts/desktop-build.mjs` 生成 `dist/desktop`。
+三个原生窗口分别加载 `/`、`chat.html`、`history.html`；这三个物理入口共享同一个 SPA 外壳，
+由路由选择界面。Tauri 的 `frontendDist` 指向 `dist/desktop`，不包含 Start 的服务端构建。
+`src/routeTree.gen.ts` 由路由插件生成，修改路由后通过开发或构建命令刷新。
+
+Rust 统一管理运行中的回合与当前会话。`agent-event` 带有会话修订号、请求 ID、回合序号和全局事件游标；
+前端先订阅事件，再读取包含历史与活动回合的快照，丢弃快照已包含或过期的事件。
+一轮进程结束后才解除发送状态；聊天面板提供“停止”按钮，新建或切换会话会终止旧回合。
+新会话 ID 直接读取 `print.result.session_id`，不通过“最新的会话文件”推断。
 
 Rust 侧的检查与 CI 一致：
 
@@ -187,7 +228,7 @@ cd src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets -- -D w
 ## CI 与发版
 
 push 到 `main` 和每个 PR 都会跑 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) 里的两个 job：
-`frontend (checks)`（语法、自测、Vite 构建，跑在 Linux 上）与 `rust (checks)`（rustfmt、clippy
+`frontend (checks)`（TypeScript、Vitest、SPA 构建和 Playwright，跑在 Linux 上）与 `rust (checks)`（rustfmt、clippy
 `-D warnings`、cargo test、`tauri build --no-bundle`，跑在 macOS 14 / Ubuntu / Windows 三平台上）。
 三平台矩阵是「跨平台」这件事的唯一真话来源。
 

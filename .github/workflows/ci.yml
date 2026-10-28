@@ -2,7 +2,7 @@
 #
 # Triggers: push to main, any pull request, manual dispatch.
 # Two jobs must both pass:
-#   frontend - JS syntax, offline self-tests, Vite build  (Linux, one runner is enough)
+#   frontend - TypeScript, unit tests, SPA build, browser tests (Linux)
 #   rust     - rustfmt, clippy (-D warnings), cargo test, `tauri build --no-bundle`
 #              on macOS, Linux and Windows: the three platforms we ship
 #
@@ -48,14 +48,20 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Syntax check
-        run: for f in *.js *.mjs; do node --check "$f"; done
+      - name: Type check
+        run: pnpm typecheck
 
-      - name: Offline self-tests
-        run: node selftest.mjs
+      - name: Unit tests
+        run: pnpm test
 
       - name: Build frontend
         run: pnpm build
+
+      - name: Install browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Browser tests against desktop assets
+        run: pnpm test:e2e
 
   rust:
     name: rust (checks, ${{ matrix.os }})

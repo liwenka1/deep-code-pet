@@ -4,14 +4,14 @@
   "version": "0.0.3",
   "identifier": "dev.deepcode.pet",
   "build": {
-    "frontendDist": "../dist",
+    "frontendDist": "../dist/desktop",
     "devUrl": "http://localhost:1420",
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
   "app": {
     "macOSPrivateApi": true,
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "windows": [
       {
         "label": "main",

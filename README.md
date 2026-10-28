@@ -129,7 +129,7 @@ persona changes; delete that line and the file is yours, the app will not touch 
 
 - macOS 10.15+, Windows 10/11, or Linux with WebKitGTK 4.1 (the published installers are built on
   GitHub's macOS 14, Windows and Ubuntu 22.04 runners)
-- Node.js 20+ and pnpm
+- Node.js 22.12+ and pnpm
 - [Rust toolchain](https://rustup.rs) for building the app
 - `deepcode` installed and configured (`deepcode --version` works, `deepcode doctor` reports a key);
   v0.4.18+ is what makes `DEEP_CODE_DISABLE_TOOLS` actually unmount the tools
@@ -181,10 +181,53 @@ nature: `chmod +x` the `.AppImage`, or install the `.deb` with your package mana
 
 ```bash
 pnpm install      # dependencies
-pnpm test         # offline self-tests (45 assertions, no network, no Tauri)
+pnpm test         # Vitest: animation, protocol, turn isolation and asset regressions
 pnpm app          # tauri dev
-pnpm build        # frontend bundle only
+pnpm build        # build static SPA assets and check TypeScript
+pnpm preview      # preview the embedded desktop assets (build first)
 ```
+
+Browser regressions use a mocked Tauri IPC boundary and never call a real model:
+
+```bash
+pnpm exec playwright install chromium  # first use
+pnpm test:e2e                         # run pnpm build first
+```
+
+### Architecture
+
+`.vscode/settings.json` points the editor at the workspace TypeScript 6 SDK and links Rust Analyzer to
+`src-tauri/Cargo.toml`. Restart the language services after installing dependencies if diagnostics remain stale.
+
+The frontend uses **React + TypeScript + TanStack Start (SPA) + Vite**, with TanStack Query for asynchronous lists.
+The desktop package embeds static files and runs no Start Node server. The document shell is prerendered at build time;
+window-specific UI and Tauri APIs initialize on the client after hydration.
+
+```text
+src/
+├── routes/             # Start routes and document shell
+├── windows/            # pet / chat / history components and interactions
+├── core/               # React-independent animation, validation and conversation state
+├── platform/           # typed Tauri commands, events and data contracts
+└── shared/             # shared window appearance and hooks
+src-tauri/src/
+├── agent/              # executable resolution, persona and child lifecycle
+├── conversations.rs    # session files and current-session pointer
+├── pets.rs             # local assets
+├── settings.rs         # settings
+└── windows.rs          # windows, menus, dragging and monitor layout
+```
+
+`pnpm build` generates `dist/client`; `scripts/desktop-build.mjs` then prepares `dist/desktop`.
+The native windows load `/`, `chat.html` and `history.html`. All three physical entries share the SPA shell;
+the router selects the UI. Tauri embeds `dist/desktop`, excluding the unused Start server build.
+The route plugin generates `src/routeTree.gen.ts`; run development or build after changing routes.
+
+Rust owns the active turn and current conversation. Each `agent-event` includes a conversation revision,
+request ID, turn sequence and global event cursor. Webviews subscribe before reading a combined history/active-turn
+snapshot and discard already-applied or stale events. Sending stays busy until the child exits; a Stop button cancels
+the turn, and selecting or creating a conversation terminates the previous turn. New session IDs come from
+`print.result.session_id` rather than guessing the most recently modified file.
 
 Rust checks mirror CI:
 
@@ -195,8 +238,7 @@ cd src-tauri && cargo fmt --all -- --check && cargo clippy --all-targets -- -D w
 ## CI and release
 
 Every push to `main` and every pull request runs two jobs in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml): `frontend (checks)` (syntax, self-tests,
-Vite build, on Linux) and `rust (checks)` on macOS 14, Ubuntu and Windows (rustfmt, clippy with
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml): `frontend (checks)` (TypeScript, Vitest, SPA build and Playwright, on Linux) and `rust (checks)` on macOS 14, Ubuntu and Windows (rustfmt, clippy with
 `-D warnings`, cargo test, `tauri build --no-bundle`). That three-platform matrix is what keeps the
 app honestly cross-platform.
 
