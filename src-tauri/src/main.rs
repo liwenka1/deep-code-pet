@@ -46,8 +46,6 @@ fn main() {
             conversations::load_history,
             agent::resolver::doctor_summary,
             agent::resolver::get_agent_bin,
-            settings::get_model,
-            settings::set_model,
             windows::drag_begin,
             windows::drag_update,
             windows::drag_end,

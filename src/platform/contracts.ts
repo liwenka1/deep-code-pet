@@ -48,8 +48,6 @@ export interface Commands {
   list_pets: { args: undefined; result: PetEntry[] }
   doctor_summary: { args: undefined; result: DoctorReport }
   get_agent_bin: { args: undefined; result: string | null }
-  get_model: { args: undefined; result: string }
-  set_model: { args: { model: string }; result: string }
   drag_begin: { args: undefined; result: void }
   drag_update: { args: undefined; result: void }
   drag_end: { args: undefined; result: void }

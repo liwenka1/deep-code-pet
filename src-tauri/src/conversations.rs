@@ -1,4 +1,5 @@
 use crate::{
+    agent::resolver::{agent_command, child_path, missing_agent_message, resolve_agent_bin},
     agent::{persona::agent_workspace, runtime::select_conversation},
     windows::open_chat,
 };
@@ -15,14 +16,12 @@ pub(crate) fn load_history(
     limit: Option<usize>,
     session_id: Option<String>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    // 读哪条：显式指定 → 当前指针（为空就是"新对话"，绝不回退）→ 没有指针文件时回退最新
-    let chosen = match session_id {
+    // 读哪条：显式指定 → 当前指针（为空就是"新对话"，绝不回退）→ 没有指针文件时回退最新。
+    // 会话正文通过 deepcode 的公开 export 命令读取，壳子不再依赖 session JSON schema。
+    let id = match session_id {
         Some(id) => {
-            let path = session_file(&app, &id)?;
-            if !path.is_file() {
-                return Err("这条对话已经不在了".to_string());
-            }
-            path
+            validate_session_id(&id)?;
+            id
         }
         None if current_marker_exists(&app) => {
             // 指针文件存在说明 UI 在管理它：指向某条就那条，为空就是新对话。
@@ -30,11 +29,7 @@ pub(crate) fn load_history(
             let Some(id) = read_current(&app) else {
                 return Ok(Vec::new());
             };
-            let path = session_file(&app, &id)?;
-            if !path.is_file() {
-                return Err("这条对话已经不在了".to_string());
-            }
-            path
+            id
         }
         None => fs::read_dir(sessions_dir(&app))
             .map_err(|error| error.to_string())?
@@ -46,12 +41,14 @@ pub(crate) fn load_history(
                 Some((modified, path))
             })
             .max_by_key(|(modified, _)| *modified)
-            .map(|(_, path)| path)
+            .and_then(|(_, path)| {
+                path.file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .map(str::to_owned)
+            })
             .ok_or_else(|| "还没有会话".to_string())?,
     };
-
-    let text = fs::read_to_string(&chosen).map_err(|error| error.to_string())?;
-    let doc: serde_json::Value = serde_json::from_str(&text).map_err(|error| error.to_string())?;
+    let doc = export_session(&app, &id)?;
     let take = limit.unwrap_or(60);
 
     let mut out: Vec<serde_json::Value> = Vec::new();
@@ -79,6 +76,54 @@ pub(crate) fn load_history(
         out = out.split_off(out.len() - take);
     }
     Ok(out)
+}
+
+pub(crate) fn export_session(
+    app: &tauri::AppHandle,
+    id: &str,
+) -> Result<serde_json::Value, String> {
+    let bin = resolve_agent_bin(app).ok_or_else(missing_agent_message)?;
+    let mut command = agent_command(&bin)?;
+    let output = command
+        .args(["session", "export", id])
+        .env("PATH", child_path(&bin))
+        .current_dir(agent_workspace(app))
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| format!("导出 deepcode 对话失败：{error}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            "这条对话已经不在了".to_string()
+        } else {
+            format!("导出 deepcode 对话失败：{stderr}")
+        });
+    }
+    serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("deepcode 对话导出解析失败：{error}"))
+}
+
+pub(crate) fn verify_session_persisted(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    let mut last_error = None;
+    for attempt in 0..3 {
+        match export_session(app, id) {
+            Ok(document)
+                if document.get("id").and_then(|value| value.as_str()) == Some(id)
+                    && document
+                        .get("entries")
+                        .and_then(|value| value.as_array())
+                        .is_some() =>
+            {
+                return Ok(())
+            }
+            Ok(_) => last_error = Some("deepcode 导出的 session 内容不完整".to_string()),
+            Err(error) => last_error = Some(error),
+        }
+        if attempt < 2 {
+            std::thread::sleep(std::time::Duration::from_millis(80));
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "deepcode session 尚未持久化".to_string()))
 }
 pub(crate) fn sessions_dir(app: &tauri::AppHandle) -> PathBuf {
     agent_workspace(app).join(".deep-code").join("sessions")

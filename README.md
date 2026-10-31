@@ -28,13 +28,13 @@
 ## Overview
 
 **deep-code-pet** is a small always-on-top desktop pet. It reads animal sprite sheets from a local
-folder, animates them with a nine-state machine, and talks through the `deepcode` CLI you already
-have installed — same account, same configuration, no extra key.
+folder, animates them with a nine-state machine, and connects to the `deepcode` runtime you already
+have installed — same account, same configuration, no extra key and no second Agent implementation.
 
 - **Local-first**: sprites, persona and conversation history all live in your own folders
-- **No bundled model**: the pet shells out to your local `deepcode`; the app itself stores no credentials
-- **Chat only, for real**: every turn sets `DEEP_CODE_DISABLE_TOOLS=1`, so deep-code mounts no tools at
-  all — no file reads, no shell, no web. That is the registry being empty, not a prompt asking nicely
+- **No bundled model**: the pet connects to your local `deepcode`; model, credentials and Agent behavior stay there
+- **Chat only, for real**: the runtime starts with `DEEP_CODE_DISABLE_TOOLS=1`, so deep-code mounts no
+  tools at all — no file reads, no shell, no web. That is the registry being empty, not a prompt asking nicely
 - **Separate windows**: the pet is a transparent overlay, chat and history are their own panels, so
   opening a panel never moves the pet
 
@@ -45,8 +45,8 @@ have installed — same account, same configuration, no extra key.
 | **Nine-state sprite animation** | Idle, running, waving, jumping, failed, waiting, review and two directions, with per-frame timing taken from the asset format. |
 | **Drag to swap pets** | Drop any pet folder on the window; the choice is remembered across launches. |
 | **Chat panel** | Full transcript, multi-line input, streaming replies, scrollback and text selection. |
-| **Conversation history** | A list window to switch, start and inspect conversations; each one is a file on disk. |
-| **Real agent, not a mock** | Tool calls, errors and turn ends all drive the animation; text goes to the chat panel. |
+| **Conversation history** | A list window to switch, start and inspect deepcode conversations stored on disk. |
+| **Deepcode runtime** | The runtime owns the Agent; the shell only projects its stream into chat and animation. |
 | **Multi-monitor dragging** | Window position comes from the OS cursor, so dragging works across displays with mixed scaling. |
 | **Above the menu bar** | On macOS the pet window is raised to `NSStatusWindowLevel`, so it can sit at the very top of the screen; the other platforms get plain `alwaysOnTop`. |
 | **Tiny footprint** | Transparent frameless window that hugs the sprite; nothing but the pet is clickable. |
@@ -132,10 +132,12 @@ persona changes; delete that line and the file is yours, the app will not touch 
 - Node.js 22.12+ and pnpm
 - [Rust toolchain](https://rustup.rs) for building the app
 - `deepcode` installed and configured (`deepcode --version` works, `deepcode doctor` reports a key);
-  v0.4.18+ is what makes `DEEP_CODE_DISABLE_TOOLS` actually unmount the tools
+  v0.4.20+ provides the local runtime HTTP bridge, and v0.4.18+ is what makes
+  `DEEP_CODE_DISABLE_TOOLS` actually unmount the tools
 
-The app spawns `deepcode -p <prompt> --output-format stream-json` and inherits your environment, so
-billing goes to the same account and no API key is ever stored by the pet.
+The bridge starts `deepcode serve --http` for the selected conversation and sends prompts to its local
+SSE endpoint. deepcode owns the Agent loop, model, tools, approvals and session persistence; billing
+goes to the same account and no API key is ever stored by the pet.
 
 Because a GUI-launched app does not inherit your shell `PATH`, the binary is resolved in this
 order:
@@ -211,8 +213,8 @@ src/
 ├── platform/           # typed Tauri commands, events and data contracts
 └── shared/             # shared window appearance and hooks
 src-tauri/src/
-├── agent/              # executable resolution, persona and child lifecycle
-├── conversations.rs    # session files and current-session pointer
+├── agent/              # deepcode executable resolution and thin runtime bridge
+├── conversations.rs    # session index compatibility and current-session pointer
 ├── pets.rs             # local assets
 ├── settings.rs         # settings
 └── windows.rs          # windows, menus, dragging and monitor layout
@@ -223,11 +225,15 @@ The native windows load `/`, `chat.html` and `history.html`. All three physical 
 the router selects the UI. Tauri embeds `dist/desktop`, excluding the unused Start server build.
 The route plugin generates `src/routeTree.gen.ts`; run development or build after changing routes.
 
-Rust owns the active turn and current conversation. Each `agent-event` includes a conversation revision,
-request ID, turn sequence and global event cursor. Webviews subscribe before reading a combined history/active-turn
-snapshot and discard already-applied or stale events. Sending stays busy until the child exits; a Stop button cancels
-the turn, and selecting or creating a conversation terminates the previous turn. New session IDs come from
-`print.result.session_id` rather than guessing the most recently modified file.
+The ownership boundary between deepcode and this shell is documented in
+[`DEEPCODE_BRIDGE.md`](DEEPCODE_BRIDGE.md). New Agent capabilities belong in deepcode;
+this repository should only consume the runtime contract.
+
+deepcode owns the active turn and session. Rust starts one local runtime server for the selected session,
+forwards prompts and cancellation, and projects the SSE envelopes into `agent-event`. Each event includes a
+conversation revision, request ID, turn sequence and global event cursor. Webviews subscribe before reading a
+combined history/active-turn snapshot and discard already-applied or stale events. Selecting or creating a
+conversation stops the previous runtime and starts the next one with deepcode's `--resume` contract.
 
 Rust checks mirror CI:
 
@@ -253,8 +259,8 @@ uploads every installer to the same GitHub Release.
    swallows clicks.
 2. **No speech bubble** — all text lives in the chat panel; short notices use a card that fades after
    four seconds.
-3. **One process per turn** — each message spawns `deepcode -p` (roughly 0.1–0.3 s plus model
-   latency). Switching to a resident `deepcode serve` + SSE would not touch the reducer.
+3. **One runtime per selected conversation** — the shell starts `deepcode serve --http` and reuses it
+   across turns. Switching conversations restarts the bridge with deepcode's `--resume` contract.
 4. **No tools at all, by design** — the pet starts `deepcode` with `DEEP_CODE_DISABLE_TOOLS=1`, so
    there is nothing to approve and nothing to execute; ask it to fix code and it points you at your
    coding assistant. (Before deep-code 0.4.18 the variable is ignored and the persona's own wording

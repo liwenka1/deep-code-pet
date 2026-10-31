@@ -154,7 +154,13 @@ fn syncs_owned_persona_only() {
     sync_persona(&persona);
     assert_eq!(fs::read_to_string(&persona).unwrap(), DEFAULT_PERSONA);
 
-    // 2. 是我们写的旧版（带标记、内容不同）→ 升级
+    // 2. 同一版本的用户补充不能在每次启动时被抹掉
+    let customized = format!("{}\n\n我补充的一句。\n", DEFAULT_PERSONA.trim_end());
+    fs::write(&persona, &customized).unwrap();
+    sync_persona(&persona);
+    assert_eq!(fs::read_to_string(&persona).unwrap(), customized);
+
+    // 3. 是我们写的旧版（带标记、内容不同）→ 升级
     fs::write(
         &persona,
         "<!-- deep-code-pet persona v1 -->\n老的 40 字口径\n",
@@ -163,7 +169,7 @@ fn syncs_owned_persona_only() {
     sync_persona(&persona);
     assert_eq!(fs::read_to_string(&persona).unwrap(), DEFAULT_PERSONA);
 
-    // 3. 用户删掉首行标记 = 接管 → 原样保留
+    // 4. 用户删掉首行标记 = 接管 → 原样保留
     fs::write(&persona, "# 我自己的宠物人格\n\n随便说。\n").unwrap();
     sync_persona(&persona);
     assert_eq!(

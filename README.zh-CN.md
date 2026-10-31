@@ -28,11 +28,11 @@
 ## 这是什么
 
 **deep-code-pet** 是一个常驻桌面的小宠物：从本地文件夹读精灵图集，用九状态机播动画，
-说话则通过你已经装好的 `deepcode` —— 同一个账号、同一份配置，不用再填 key。
+连接你已经装好的 `deepcode` runtime —— 同一个账号、同一份配置，不用再填 key，也不在壳子里重写 Agent。
 
 - **本地优先**：素材、人格、对话历史都在你自己的目录里
-- **不自带模型**：宠物只是 spawn 本地的 `deepcode`，自身不存任何凭证
-- **真的只聊天**：每轮都带 `DEEP_CODE_DISABLE_TOOLS=1` 起 `deepcode`，工具一个都不挂
+- **不自带模型**：宠物只是连接本地的 `deepcode`，模型、凭证和 Agent 行为都由它负责
+- **真的只聊天**：runtime 启动时带 `DEEP_CODE_DISABLE_TOOLS=1`，工具一个都不挂
   （读文件、执行命令、联网都没有）—— 不是写句提示词劝模型别用
 - **多窗口**：宠物是透明浮层，聊天与历史是独立面板，展开面板不会挪动宠物
 
@@ -43,8 +43,8 @@
 | **九状态精灵动画** | idle / 跑动 / 挥手 / 跳 / 失败 / 等待 / review 与两个方向，逐帧时长按素材格式表 |
 | **拖入换宠物** | 把任意宠物文件夹拖进窗口即可，选择会被记住 |
 | **聊天面板** | 完整记录、多行输入、流式回复、可滚动、可选中复制 |
-| **历史对话** | 独立列表窗口：切换、新建、查看；每个会话就是磁盘上的一个文件 |
-| **真实 Agent** | 工具调用、出错、回合结束都会驱动动画；文字进聊天面板 |
+| **历史对话** | 独立列表窗口：切换、新建、查看；会话由 deepcode 持久化在磁盘上 |
+| **Deepcode runtime** | Agent 全部由 deepcode 负责，壳子只把事件投影成聊天和动画 |
 | **多屏拖拽** | 窗口位置由系统光标坐标算，跨显示器、混合缩放都正常 |
 | **可压到菜单栏之上** | macOS 上把宠物窗口抬到 `NSStatusWindowLevel`，能贴到屏幕最顶部；其它平台用系统自带的 `alwaysOnTop` |
 | **体积小** | 透明无边框窗口贴着精灵，除了宠物本体没有可点区域 |
@@ -126,10 +126,10 @@
 - Node.js 22.12+ 与 pnpm
 - 编译需要 [Rust 工具链](https://rustup.rs)
 - 已安装并配置好的 `deepcode`（`deepcode --version` 有输出，`deepcode doctor` 能看到 key）；
-  v0.4.18+ 才能用 `DEEP_CODE_DISABLE_TOOLS` 真正关掉工具
+  v0.4.20+ 提供本机 runtime HTTP bridge，v0.4.18+ 才能用 `DEEP_CODE_DISABLE_TOOLS` 真正关掉工具
 
-宠物会 spawn `deepcode -p <prompt> --output-format stream-json` 并继承你的环境，
-所以计费走同一账号，宠物自身不存 key。
+壳子会为当前对话启动一个 `deepcode serve --http`，通过本机 SSE 接口发送消息。Agent loop、模型、工具、
+审批和 session 持久化都由 deepcode 负责，所以计费走同一账号，宠物自身不存 key。
 
 GUI 启动的 app **不会继承 shell 的 PATH**，所以可执行文件按这个顺序解析：
 
@@ -202,8 +202,8 @@ src/
 ├── platform/           # 类型化的 Tauri 命令、事件和数据契约
 └── shared/             # 窗口外观和共享 hooks
 src-tauri/src/
-├── agent/              # 可执行文件解析、人格、进程生命周期
-├── conversations.rs    # 会话文件与当前会话指针
+├── agent/              # deepcode 可执行文件解析与薄 runtime bridge
+├── conversations.rs    # 会话索引兼容层与当前会话指针
 ├── pets.rs             # 本地素材读取
 ├── settings.rs         # 设置
 └── windows.rs          # 窗口、菜单、拖拽与跨屏布局
@@ -214,10 +214,12 @@ src-tauri/src/
 由路由选择界面。Tauri 的 `frontendDist` 指向 `dist/desktop`，不包含 Start 的服务端构建。
 `src/routeTree.gen.ts` 由路由插件生成，修改路由后通过开发或构建命令刷新。
 
-Rust 统一管理运行中的回合与当前会话。`agent-event` 带有会话修订号、请求 ID、回合序号和全局事件游标；
-前端先订阅事件，再读取包含历史与活动回合的快照，丢弃快照已包含或过期的事件。
-一轮进程结束后才解除发送状态；聊天面板提供“停止”按钮，新建或切换会话会终止旧回合。
-新会话 ID 直接读取 `print.result.session_id`，不通过“最新的会话文件”推断。
+deepcode 与桌宠壳子的职责边界见 [`DEEPCODE_BRIDGE.md`](DEEPCODE_BRIDGE.md)。新的 Agent 能力先放进
+deepcode，本仓库只消费 runtime 协议。
+
+deepcode 统一管理运行中的回合与 session。Rust 只为当前对话启动本机 runtime，转发消息和取消请求，再把 SSE
+envelope 投影成 `agent-event`。事件带有会话修订号、请求 ID、回合序号和全局事件游标；前端先订阅事件，再读取包含历史与活动回合的快照，丢弃快照已包含或过期的事件。
+聊天面板提供“停止”按钮，新建或切换会话会终止旧 runtime，再按 deepcode 的 `--resume` 约定启动下一份。
 
 Rust 侧的检查与 CI 一致：
 
@@ -240,8 +242,7 @@ push 到 `main` 和每个 PR 都会跑 [`.github/workflows/ci.yml`](.github/work
 
 1. **没有点击穿透**：窗口贴着精灵（外扩 8px），那圈边距仍会吃掉点击。
 2. **没有气泡**：所有文字都在聊天面板；短暂通知是 4 秒后消失的卡片。
-3. **一轮一个进程**：每句话 spawn 一次 `deepcode -p`（约 0.1–0.3s 加模型延迟）。
-   换成常驻 `deepcode serve` + SSE 的话，reducer 不用改。
+3. **每个对话一份 runtime**：壳子启动 `deepcode serve --http`，同一对话的多轮消息复用它；切换对话时按 deepcode 的 `--resume` 约定重启 bridge。
 4. **没有任何工具（设计如此）**：宠物用 `DEEP_CODE_DISABLE_TOOLS=1` 起 `deepcode`，
    所以没有东西要审批、也没有东西可执行 —— 让它改代码，它会让你去找编程助手。
    （`deepcode` 0.4.18 之前的版本不认识这个变量，会退回 persona 里的文字约定。）

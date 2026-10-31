@@ -26,6 +26,7 @@ pub(crate) const DEFAULT_PERSONA: &str =
 
 /// `DEFAULT_PERSONA` 首行的归属标记前缀（版本号会变，所以只比对前缀）。
 const PERSONA_OWNED_PREFIX: &str = "<!-- deep-code-pet persona";
+const PERSONA_MARKER: &str = "<!-- deep-code-pet persona v2";
 
 /// 把 AGENTS.md 同步成当前版本的默认人格。
 ///
@@ -37,6 +38,9 @@ pub(crate) fn sync_persona(persona: &Path) {
     let should_write = match fs::read_to_string(persona).ok().as_deref() {
         None => true,
         Some(text) if text == DEFAULT_PERSONA => false,
+        // Same-version files may contain user additions below the marker. Keep
+        // them; only a shipped persona version change is eligible for refresh.
+        Some(text) if text.trim_start().starts_with(PERSONA_MARKER) => false,
         Some(text) => text.trim_start().starts_with(PERSONA_OWNED_PREFIX),
     };
     if should_write {
