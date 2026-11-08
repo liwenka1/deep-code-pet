@@ -281,7 +281,7 @@ impl ProcessControl {
         self.cancelled.load(Ordering::SeqCst)
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     fn wait_for_exit(&self) -> i32 {
         loop {
             let code = {
@@ -766,10 +766,7 @@ fn spawn_server(
 
 fn drain_tail(mut reader: impl Read, tail: Arc<Mutex<Vec<u8>>>) {
     let mut buffer = [0u8; 1024];
-    loop {
-        let Ok(len) = reader.read(&mut buffer) else {
-            break;
-        };
+    while let Ok(len) = reader.read(&mut buffer) {
         if len == 0 {
             break;
         }
@@ -881,6 +878,7 @@ fn finish(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::process::Command;
 
     #[test]
